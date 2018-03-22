@@ -1,6 +1,6 @@
 # Readme.md
 ### 天池精准医疗大赛-糖尿病遗传风险预测
-##### 由于初赛和复赛题目相差太大，谨在此给出复赛的一点思路权当抛砖引玉
+##### Top12 思路 由于初赛和复赛题目相差太大，谨在此给出复赛的一点思路权当抛砖引玉
 
 #### 特征工程
 ##### 新特征构造
@@ -37,5 +37,37 @@ get_ans_face = list(set(get_pic(lgb_model,feature_name1).head(nums)['name'])|set
 # get_ans_face = list(set(get_pic(lgb_model,feature_name1).head(nums)['name'])&set(get_pic(xgb_model,feature_name1).head(nums)['name'])&set(get_pic(gbc_model,feature_name1).head(nums)['name']))
 # 先训练好三个模型 第一种方法是将三个模型的Feature_importances的Top K选择出来后，将这些特征取并集；而第二种方法则是取交集
 ```
-###### 在经验上 第一种方法所需要设置的nums较小，而第二种方法所需要设置的nums较大，籍此选出较强的特征后进入前文所述的贪心选择法中，即选择出较优的特征向量组
+###### 在经验上 第一种方法所需要设置的nums较小，而第二种方法所需要设置的nums较大，籍此选出较强的特征后进入前文所述的贪心选择法中，即选择出较优的特征向量组，而在Choose_Best_Feature中，笔者使用的是`Xgboost`,`Lightgbm`,`GBDT`三种模型的CV值的平均值量度加入New_Feature对模型的影响，如此可以保证线上与线下的`同增同减`
+
+```
+def get_model(nums,cv_fold):
+    feature_name1 = train_data[feature_name].columns
+    get_ans_face = list(set(get_pic(gbc_model,feature_name1).head(nums)['name'])&set(get_pic(xgb_model,feature_name1).head(nums)['name'])&set(get_pic(lgb_model,feature_name1).head(nums)['name']))
+    print('New Feature: ',len(get_ans_face))
+    new_lgb_model = lgb.LGBMClassifier(objective='binary',n_estimators=300,max_depth=3,min_child_samples=6,learning_rate=0.102,random_state=1)
+    cv_model = cv(new_lgb_model, train_data[get_ans_face], train_label,  cv=cv_fold, scoring='f1')
+    new_lgb_model.fit(train_data[get_ans_face], train_label)
+    m1 = cv_model.mean()
+
+    new_xgb_model1 = xgb.XGBClassifier(objective='binary:logistic',n_estimators=300,max_depth=4,learning_rate=0.101,random_state=1)
+    cv_model = cv(new_xgb_model1, train_data[get_ans_face].values, train_label,  cv=cv_fold, scoring='f1')
+    new_xgb_model1.fit(train_data[get_ans_face].values, train_label)
+    m2 = cv_model.mean()
+
+    new_gbc_model = GBC(n_estimators=310,subsample=1,min_samples_split=2,max_depth=3,learning_rate=0.1900,min_weight_fraction_leaf=0.1)
+    kkk = train_data[get_ans_face].fillna(7)
+    cv_model = cv(new_gbc_model, kkk[get_ans_face], train_label,  cv=cv_fold, scoring='f1')
+    new_gbc_model.fit(kkk.fillna(7),train_label)
+
+    m3 = cv_model.mean()
+    print((m1+m2+m3)/3)
+    pro1 = new_lgb_model.predict_proba(test_data[get_ans_face])
+    pro2 = new_xgb_model1.predict_proba(test_data[get_ans_face].values)
+    pro3 = new_gbc_model.predict_proba(test_data[get_ans_face].fillna(7).values)
+    ans = (pro1+pro2+pro3)/3
+    return ans
+```
+
+###### 在最后的结果提交环节中，也有一个可以参考的小技巧，将选择出来的特征向量组放入三个树模型中可以得到Ans1,Ans2,Ans3,也可以得到概率P1,P2,P3,那么将Ans1、2、3做结果的投票融合得到Ans4，将P1/P2/P3做概率融合得到Ans5,再利用线下表现较好的线性模型利用特征向量组产生Ans6,把Ans4,Ans5,Ans6再进行结果投票即可得到Ans7,Ans7的效果经过笔者的实践证明还不错
+
 
